@@ -1,0 +1,30 @@
+# ── VCS и CI (не нужны внутри build-контекста) ──
+.git
+.github
+
+# ── локальные артефакты сборки/тестов ──
+bin/
+tmp/
+*.test
+*.out
+coverage.*
+/scheduler
+.DS_Store
+
+# ── локальное окружение и редакторы ──
+.env
+.idea/
+.vscode/
+.env.example
+
+# ── документация ──
+*.md
+
+# ── Docker/compose/prometheus — инфраструктура, в контексте сборки не нужна ──
+Dockerfile
+docker-compose.yml
+.dockerignore
+.gitignore
+prometheus/
+
+# ВАЖНО: go.mod, go.sum, cmd/, internal/, migrations/ — НЕ игнорировать.

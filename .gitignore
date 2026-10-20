@@ -1,0 +1,12 @@
+bin/
+.env
+*.out
+coverage.*
+.idea/
+.vscode/
+/scheduler
+.DS_Store
+*.test
+tmp/
+
+# go.mod и go.sum НЕ игнорируются — всегда коммитятся.

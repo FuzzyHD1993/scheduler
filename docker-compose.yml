@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: scheduler
+      POSTGRES_PASSWORD: scheduler
+      POSTGRES_DB: scheduler
+    ports:
+      # Порт хоста переопределяется: POSTGRES_PORT=15432 (см. .env.example)
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scheduler -d scheduler"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # Вспомогательный сервис (учитывается в /health), не хранит durable-состояние
+    # задач: очередь живёт в PostgreSQL. Persistence не включаем —
+    # при рестарте Redis ничего не теряется.
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: "postgres://scheduler:scheduler@postgres:5432/scheduler?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      WORKER_COUNT: "3"
+      AUTO_MIGRATE: "true"
+    ports:
+      - "${SCHEDULER_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+  prometheus:
+    # Тег соответствует локальному prom/prometheus:latest — тот же манифестный digest,
+    # подтверждено через docker image inspect + Docker Hub API.
+    image: prom/prometheus:v3.15.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  promdata:

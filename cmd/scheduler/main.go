@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/gofiber/fiber/v3"
@@ -24,6 +26,7 @@ import (
 	"scheduler/internal/metrics"
 	"scheduler/internal/queue"
 	"scheduler/internal/store"
+	"scheduler/internal/tui"
 	"scheduler/internal/worker"
 	"scheduler/migrations"
 )
@@ -101,8 +104,21 @@ func hostname() string {
 }
 
 func main() {
+	// The interactive client is a subcommand: `scheduler tui [--api URL]`.
+	if len(os.Args) > 1 && os.Args[1] == "tui" {
+		os.Exit(runTUI(os.Args[2:]))
+	}
+
 	var showVersion bool
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage:")
+		fmt.Fprintln(os.Stderr, "  scheduler [flags]         API, workers and maintenance loops")
+		fmt.Fprintln(os.Stderr, "  scheduler tui [--api URL] interactive client")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Flags:")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
 	if showVersion {
@@ -321,4 +337,30 @@ func connectRedis(addr string) *redis.Client {
 		return nil
 	}
 	return redis.NewClient(&redis.Options{Addr: addr})
+}
+
+// runTUI starts the interactive client. It talks to the scheduler API
+// over HTTP, so it needs neither Postgres nor the worker loops.
+func runTUI(args []string) int {
+	fs := flag.NewFlagSet("tui", flag.ExitOnError)
+	apiURL := fs.String("api", envOr("SCHEDULER_API_URL", "http://localhost:8080"),
+		"scheduler API base URL")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	p := tea.NewProgram(tui.New(tui.NewClient(*apiURL)), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "tui: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// envOr returns the value of key, or def when it is unset or blank.
+func envOr(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
 }

@@ -184,6 +184,54 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8080/jobs/$JOB
 curl -s -X POST http://127.0.0.1:8080/jobs/$JOB_ID/retry | jq
 ```
 
+## TUI
+
+Интерактивный клиент к API: таблица задач, retry и создание задач без `curl`.
+
+```bash
+go run ./cmd/scheduler tui --api http://localhost:8080
+# или через переменную окружения
+SCHEDULER_API_URL=http://localhost:8080 ./scheduler tui
+```
+
+```
+Scheduler   задач: 3
+n — создать · r — retry · R — обновить · ↑/↓ — выбор · q — выход
+
+   ID     TYPE       STATUS      ATTEMPTS   CREATED
+▶ 42     http       pending     0/3        09:42:50
+  41     noop       completed   0/1        09:42:12
+
+╭─ Создание задачи ──────────────────────────────────╮
+│ ▶ Type:     http                                   │
+│   Payload:  {"url":"https://example.com"}          │
+│   Attempts: 3                                      │
+│                                                    │
+│ Tab: следующее поле · Enter: создать · Esc: отмена │
+╰────────────────────────────────────────────────────╯
+```
+
+| Клавиша | Действие |
+|---|---|
+| `n` | открыть форму создания задачи |
+| `Tab` / `Shift+Tab` (или `↓`/`↑`) | переключение поля: Type → Payload → Attempts |
+| `Enter` | отправить `POST /jobs`; при ошибке форма остаётся открытой и показывает текст ошибки API |
+| `Esc` | закрыть форму без отправки |
+| `↑`/`↓` (`k`/`j`) | выбор задачи в таблице |
+| `r` | `POST /jobs/:id/retry` для выбранной задачи |
+| `R` | перечитать список |
+| `q` / `Ctrl+C` | выход |
+
+Форма проверяет ввод до отправки: `payload` должен быть валидным JSON, для типа `http` — содержать `{"url":"http(s)://…"}`, `attempts` — целое число 1–100. Пустые поля означают значения по умолчанию: тип `http`, payload `{}`, attempts `3`.
+
+TUI работает только через HTTP API (Postgres и Redis ему не нужны), поэтому его можно запускать с любой машины, где доступен порт API.
+
+Тесты: `go test ./internal/tui` (модель и HTTP-клиент, покрытие ~90%). Живой прогон против запущенного API:
+
+```bash
+SCHEDULER_API_URL=http://localhost:18080 go test ./internal/tui -run TestLiveAPI -v
+```
+
 ## Жизненный цикл задачи
 
 ```
@@ -291,8 +339,9 @@ TEST_DATABASE_URL='postgres://scheduler:scheduler@localhost:15432/scheduler?sslm
 ├── prometheus/
 │   └── prometheus.yml      # scrape scheduler:8080/metrics каждые 5s
 ├── cmd/
-│   └── scheduler/          # точка входа (main)
+│   └── scheduler/          # точка входа (main, подкоманда tui)
 ├── internal/               # внутренние пакеты приложения
+│   └── tui/                # bubbletea-клиент: таблица задач, retry, форма создания
 └── migrations/             # SQL-миграции (встраиваются в бинарник через embed)
 ```
 
